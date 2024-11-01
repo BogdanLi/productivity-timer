@@ -17,3 +17,32 @@ export interface TimerPreset {
 }
 
 export type TimerMode = 'focus' | 'break' | 'longBreak';
+
+export interface TimerSession {
+  id: string;
+  presetId: string;
+  mode: TimerMode;
+  duration: number;
+  startedAt: string;
+  completedAt: string;
+}
+
+export interface TimerStatistics {
+  totalSessions: number;
+  totalMinutes: number;
+  sessionsPerMode: {
+    focus: number;
+    break: number;
+    longBreak: number;
+  };
+  minutesPerMode: {
+    focus: number;
+    break: number;
+    longBreak: number;
+  };
+}
+
+export interface DailyStatistics {
+  date: string;
+  stats: TimerStatistics;
+}

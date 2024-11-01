@@ -1,183 +1,44 @@
-import { useState, useEffect } from "react";
-import { TimerState, TimerPreset, TimerMode } from "../types/timer";
+import { useState } from "react";
+import { TimerMode } from "../types/timer";
 import TimerCircle from "./TimerCircle";
 import TimerControls from "./TimerControls";
 import PresetManager from "./PresetManager";
-
-const DEFAULT_PRESETS: TimerPreset[] = [
-  {
-    id: "1",
-    name: "Default",
-    times: {
-      focusTime: 25,
-      breakTime: 5,
-      longBreakTime: 15,
-    },
-  },
-  {
-    id: "2",
-    name: "Long Focus",
-    times: {
-      focusTime: 50,
-      breakTime: 10,
-      longBreakTime: 30,
-    },
-  },
-];
+import StatisticsModal from "./StatisticsModal";
+import { useTimer } from "../hooks/useTimer";
+import { usePresets } from "../hooks/usePresets";
+import { useNotifications } from "../hooks/useNotifications";
+import { useTimerSessions } from "../hooks/useTimerSessions";
 
 const Timer = () => {
-  const [presets, setPresets] = useState<TimerPreset[]>(() => {
-    const saved = localStorage.getItem("timerPresets");
-    if (!saved) return DEFAULT_PRESETS;
-
-    try {
-      const parsedPresets = JSON.parse(saved);
-      // Migrate old presets or validate existing ones
-      const migratedPresets = parsedPresets.map((preset: any) => {
-        if (!preset.times) {
-          // Handle old format
-          return {
-            ...preset,
-            times: {
-              focusTime: preset.minutes || 25,
-              breakTime: 5,
-              longBreakTime: 15,
-            },
-          };
-        }
-        // Ensure all required time properties exist
-        return {
-          ...preset,
-          times: {
-            focusTime: preset.times.focusTime || 25,
-            breakTime: preset.times.breakTime || 5,
-            longBreakTime: preset.times.longBreakTime || 15,
-          },
-        };
-      });
-      return migratedPresets;
-    } catch (error) {
-      console.error("Error parsing timer presets:", error);
-      return DEFAULT_PRESETS;
-    }
-  });
-
   const [activePreset, setActivePreset] = useState<number>(0);
   const [activeMode, setActiveMode] = useState<TimerMode>("focus");
+  const [showStats, setShowStats] = useState(false);
 
-  const getCurrentTime = (preset: TimerPreset, mode: TimerMode) => {
-    switch (mode) {
-      case "focus":
-        return preset.times.focusTime;
-      case "break":
-        return preset.times.breakTime;
-      case "longBreak":
-        return preset.times.longBreakTime;
-    }
-  };
+  const { presets, addPreset, deletePreset } = usePresets();
+  const { notificationsEnabled, setNotificationsEnabled } = useNotifications();
+  const { sessions } = useTimerSessions();
 
-  const [timer, setTimer] = useState<TimerState>({
-    minutes: getCurrentTime(presets[0], "focus"),
-    seconds: 0,
-    isRunning: false,
-  });
-
-  const [initialMinutes, setInitialMinutes] = useState(
-    getCurrentTime(presets[0], "focus")
-  );
-
-  useEffect(() => {
-    localStorage.setItem("timerPresets", JSON.stringify(presets));
-  }, [presets]);
-
-  const handlePresetAdd = (newPreset: TimerPreset) => {
-    setPresets([...presets, newPreset]);
-  };
-
-  const handlePresetDelete = (id: string) => {
-    setPresets(presets.filter((preset) => preset.id !== id));
-  };
+  const {
+    timer,
+    initialMinutes,
+    startTimer,
+    pauseTimer,
+    resetTimer,
+    adjustTime,
+    updateTimerForNewPreset,
+  } = useTimer(presets[activePreset], activeMode, setActiveMode);
 
   const switchTimer = (presetIndex: number) => {
     if (!timer.isRunning) {
-      const newTime = getCurrentTime(presets[presetIndex], activeMode);
       setActivePreset(presetIndex);
-      setInitialMinutes(newTime);
-      setTimer({
-        minutes: newTime,
-        seconds: 0,
-        isRunning: false,
-      });
+      updateTimerForNewPreset(presets[presetIndex], activeMode);
     }
   };
 
   const switchMode = (mode: TimerMode) => {
     if (!timer.isRunning) {
-      const newTime = getCurrentTime(presets[activePreset], mode);
       setActiveMode(mode);
-      setInitialMinutes(newTime);
-      setTimer({
-        minutes: newTime,
-        seconds: 0,
-        isRunning: false,
-      });
-    }
-  };
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-
-    if (timer.isRunning) {
-      interval = setInterval(() => {
-        if (timer.seconds === 0) {
-          if (timer.minutes === 0) {
-            // Timer completed
-            setTimer((prev) => ({ ...prev, isRunning: false }));
-            // You can add a sound notification here
-            return;
-          }
-          setTimer((prev) => ({
-            ...prev,
-            minutes: prev.minutes - 1,
-            seconds: 59,
-          }));
-        } else {
-          setTimer((prev) => ({
-            ...prev,
-            seconds: prev.seconds - 1,
-          }));
-        }
-      }, 1000);
-    }
-
-    return () => clearInterval(interval);
-  }, [timer.isRunning, timer.minutes, timer.seconds]);
-
-  const startTimer = () => {
-    setTimer((prev) => ({ ...prev, isRunning: true }));
-  };
-
-  const pauseTimer = () => {
-    setTimer((prev) => ({ ...prev, isRunning: false }));
-  };
-
-  const resetTimer = () => {
-    setTimer({
-      minutes: initialMinutes,
-      seconds: 0,
-      isRunning: false,
-    });
-  };
-
-  const adjustTime = (change: number) => {
-    if (!timer.isRunning) {
-      const newMinutes = Math.max(1, initialMinutes + change);
-      setInitialMinutes(newMinutes);
-      setTimer((prev) => ({
-        ...prev,
-        minutes: newMinutes,
-        seconds: 0,
-      }));
+      updateTimerForNewPreset(presets[activePreset], mode);
     }
   };
 
@@ -188,14 +49,32 @@ const Timer = () => {
 
   return (
     <div className="flex flex-col items-center gap-4 p-6 rounded-lg bg-white shadow-md">
+      {!notificationsEnabled && (
+        <button
+          onClick={() =>
+            requestNotificationPermission().then(setNotificationsEnabled)
+          }
+          className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 mb-4"
+        >
+          Enable Notifications
+        </button>
+      )}
+
+      <button
+        onClick={() => setShowStats(true)}
+        className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600"
+      >
+        View Statistics
+      </button>
+
       <PresetManager
         presets={presets}
         activePreset={activePreset}
         activeMode={activeMode}
         onPresetSelect={switchTimer}
         onModeSelect={switchMode}
-        onPresetAdd={handlePresetAdd}
-        onPresetDelete={handlePresetDelete}
+        onPresetAdd={addPreset}
+        onPresetDelete={deletePreset}
       />
 
       <TimerCircle
@@ -226,6 +105,13 @@ const Timer = () => {
         onStart={startTimer}
         onPause={pauseTimer}
         onReset={resetTimer}
+      />
+
+      <StatisticsModal
+        isOpen={showStats}
+        onClose={() => setShowStats(false)}
+        sessions={sessions}
+        presets={presets}
       />
     </div>
   );

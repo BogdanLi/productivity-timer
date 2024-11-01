@@ -2,9 +2,9 @@ import Timer from "./components/Timer";
 
 const App = () => {
   return (
-    <div>
+    <main>
       <Timer />
-    </div>
+    </main>
   );
 };
 
